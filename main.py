@@ -59,34 +59,44 @@ class AvitoRentalBot:
         # Если нет сообщений от агента - это начало
         if not agent_messages:
             return STAGE_GREETING
+        
+        # Проверяем, есть ли уже приветствие
+        has_greeting = any("здравствуйте" in msg and "светлана" in msg for msg in agent_messages)
+        if not has_greeting:
+            return STAGE_GREETING
             
+        # Анализируем собранную информацию из сообщений клиента
+        client_text = " ".join(client_messages).lower()
         last_agent_msg = agent_messages[-1] if agent_messages else ""
         
-        # Проверяем ключевые фразы в последнем сообщении агента
-        if "здравствуйте" in last_agent_msg and "кто проживать планирует" in last_agent_msg:
+        # Проверяем наличие информации о жильцах
+        has_residents_info = any(word in client_text for word in ["человек", "буду", "планирую", "один", "два", "три", "семь", "пара", "семья"])
+        
+        # Проверяем наличие информации о сроке
+        has_period_info = any(word in client_text for word in ["месяц", "год", "надолго", "постоянно"]) or any(char.isdigit() for char in client_text if "месяц" in client_text)
+        
+        # Проверяем наличие даты
+        has_date_info = any(word in client_text for word in ["август", "сентябр", "октябр", "ноябр", "декабр", "январ", "феврал", "март", "апрел", "май", "июн", "июл"]) or ("число" in client_text and any(char.isdigit() for char in client_text))
+        
+        # Проверяем наличие телефона
+        has_phone = any(len([c for c in msg if c.isdigit()]) >= 10 for msg in client_messages)
+        
+        # Определяем этап на основе собранной информации
+        if not has_residents_info or "кто проживать планирует" in last_agent_msg:
             return STAGE_RESIDENTS
-        elif "дети" in last_agent_msg or "ребен" in last_agent_msg:
+        elif ("дет" in last_agent_msg or "ребен" in last_agent_msg) and not has_period_info:
             return STAGE_CHILDREN
-        elif "животн" in last_agent_msg or "питом" in last_agent_msg:
+        elif ("животн" in last_agent_msg or "питом" in last_agent_msg) and not has_period_info:
             return STAGE_PETS
-        elif "срок" in last_agent_msg or "месяц" in last_agent_msg:
+        elif not has_period_info or ("срок" in last_agent_msg or "месяц" in last_agent_msg):
             return STAGE_RENTAL_PERIOD
-        elif "дата" in last_agent_msg or "числ" in last_agent_msg or "заез" in last_agent_msg:
+        elif not has_date_info or ("дата" in last_agent_msg or "заез" in last_agent_msg):
             return STAGE_DEADLINE
-        elif "телефон" in last_agent_msg or "номер" in last_agent_msg:
+        elif not has_phone or ("телефон" in last_agent_msg or "номер" in last_agent_msg):
             return STAGE_CONTACTS
-        elif "обсудим" in last_agent_msg and "собственниц" in last_agent_msg:
-            return STAGE_COMPLETE
-            
-        # Анализируем, есть ли ответы клиента на основные вопросы
-        client_text = " ".join(client_messages).lower()
-        
-        if any(word in client_text for word in ["планирую", "буду", "человек", "семь", "один", "два", "три"]):
-            if "дет" not in last_agent_msg:
-                return STAGE_CHILDREN
-        
-        return STAGE_RESIDENTS
-        
+        else:
+            return STAGE_COMPLETE  
+
     def format_dialog_history(self, messages):
         """Форматирование истории диалога для отправки в GPT"""
         dialog = []
@@ -109,10 +119,14 @@ class AvitoRentalBot:
             if direction == "in":
                 dialog.append(f"Клиент: {text}")
             elif direction == "out":
-                dialog.append(f"Светлана: {text}")
+                # Убираем дублирование "Светлана:" если оно уже есть в тексте
+                clean_text = text
+                if clean_text.startswith("Светлана: "):
+                    clean_text = clean_text[10:].strip()  # Убираем "Светлана: "
+                dialog.append(f"Светлана: {clean_text}")
         
         return "\n".join(dialog)
-    
+        
     async def process_chat(self, client, chat_id, chat_data):
         """Обработка отдельного чата"""
         try:
