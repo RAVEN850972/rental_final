@@ -1,381 +1,243 @@
 #!/bin/bash
 
-# Цвета для терминала
+# ┌─────────────────────────────────────────────────────────────────────────────┐
+# │                           AVITO RENTAL BOT SETUP                           │
+# │                         Автоматическая установка                            │
+# │                                                                             │
+# │ Автор: ZerX                                                                 │
+# │ Версия: 1.0                                                                 │
+# │ Дата: 2025                                                                  │
+# └─────────────────────────────────────────────────────────────────────────────┘
+
+set -e
+
+# Цвета для вывода
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-PURPLE='\033[0;35m'
-CYAN='\033[0;36m'
-WHITE='\033[1;37m'
 NC='\033[0m' # No Color
 
-# ASCII арт заголовок
-print_header() {
-    clear
-    echo -e "${CYAN}"
-    echo "╔═══════════════════════════════════════════════════════════════════════════════╗"
-    echo "║                           AVITO RENTAL BOT DEPLOYER                          ║"
-    echo "║                              Automated Deployment                            ║"
-    echo "╠═══════════════════════════════════════════════════════════════════════════════╣"
-    echo "║                                                                               ║"
-    echo "║  ██████╗  ██████╗ ████████╗    ██████╗ ███████╗██████╗ ██╗      ██████╗ ██╗ ║"
-    echo "║  ██╔══██╗██╔═══██╗╚══██╔══╝    ██╔══██╗██╔════╝██╔══██╗██║     ██╔═══██╗╚██╗║"
-    echo "║  ██████╔╝██║   ██║   ██║       ██║  ██║█████╗  ██████╔╝██║     ██║   ██║ ╚██║"
-    echo "║  ██╔══██╗██║   ██║   ██║       ██║  ██║██╔══╝  ██╔═══╝ ██║     ██║   ██║ ██╔╝║"
-    echo "║  ██████╔╝╚██████╔╝   ██║       ██████╔╝███████╗██║     ███████╗╚██████╔╝██╔╝ ║"
-    echo "║  ╚═════╝  ╚═════╝    ╚═╝       ╚═════╝ ╚══════╝╚═╝     ╚══════╝ ╚═════╝ ╚═╝  ║"
-    echo "║                                                                               ║"
-    echo "╠═══════════════════════════════════════════════════════════════════════════════╣"
-    echo "║                                Author: ZerX                                   ║"
-    echo "╚═══════════════════════════════════════════════════════════════════════════════╝"
-    echo -e "${NC}"
-    echo
+# Функция для печати с рамкой
+print_box() {
+    local text="$1"
+    local length=${#text}
+    local line=$(printf "%-${length}s" | tr ' ' '─')
+    
+    echo "┌─${line}─┐"
+    echo "│ ${text} │"
+    echo "└─${line}─┘"
 }
 
 # Функция для печати статуса
 print_status() {
-    echo -e "${BLUE}[INFO]${NC} $1"
+    local status="$1"
+    local message="$2"
+    if [ "$status" = "OK" ]; then
+        echo -e "[${GREEN}✓${NC}] $message"
+    elif [ "$status" = "ERROR" ]; then
+        echo -e "[${RED}✗${NC}] $message"
+    elif [ "$status" = "INFO" ]; then
+        echo -e "[${BLUE}i${NC}] $message"
+    elif [ "$status" = "WARN" ]; then
+        echo -e "[${YELLOW}!${NC}] $message"
+    fi
 }
 
-print_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-print_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-# Функция для создания разделителя
-print_separator() {
-    echo -e "${CYAN}═══════════════════════════════════════════════════════════════════════════════${NC}"
-}
+# Приветствие
+clear
+echo
+print_box "AVITO RENTAL BOT - УСТАНОВКА SYSTEMD СЕРВИСА"
+echo
+echo "Автор: ZerX"
+echo "Данный скрипт настроит автозапуск бота через systemd"
+echo
 
 # Проверка прав root
-check_root() {
-    if [[ $EUID -ne 0 ]]; then
-        print_error "Этот скрипт должен быть запущен с правами root"
-        echo -e "${YELLOW}Используйте: sudo $0${NC}"
+if [ "$EUID" -ne 0 ]; then
+    print_status "ERROR" "Запустите скрипт с правами root (sudo)"
+    exit 1
+fi
+
+print_status "OK" "Права root подтверждены"
+
+# Определение пользователя, который запустил sudo
+if [ -n "$SUDO_USER" ]; then
+    REAL_USER="$SUDO_USER"
+    USER_HOME="/home/$REAL_USER"
+else
+    REAL_USER="root"
+    USER_HOME="/root"
+fi
+
+print_status "INFO" "Пользователь: $REAL_USER"
+
+# Поиск директории проекта
+BOT_DIR=""
+POSSIBLE_DIRS=(
+    "$USER_HOME/avito-bot"
+    "$USER_HOME/avito-rental-bot"
+    "$USER_HOME/bot"
+    "/opt/avito-bot"
+    "$(pwd)"
+)
+
+for dir in "${POSSIBLE_DIRS[@]}"; do
+    if [ -f "$dir/main.py" ] && [ -f "$dir/config.py" ]; then
+        BOT_DIR="$dir"
+        break
+    fi
+done
+
+if [ -z "$BOT_DIR" ]; then
+    echo
+    print_status "WARN" "Автоматический поиск не дал результатов"
+    echo "Введите полный путь к директории с ботом:"
+    read -p "Путь: " BOT_DIR
+    
+    if [ ! -f "$BOT_DIR/main.py" ] || [ ! -f "$BOT_DIR/config.py" ]; then
+        print_status "ERROR" "Файлы main.py или config.py не найдены в $BOT_DIR"
         exit 1
     fi
-}
+fi
 
-# Установка зависимостей
-install_dependencies() {
-    print_separator
-    print_status "Установка системных зависимостей"
-    
-    # Обновление пакетов
-    print_status "Обновление списка пакетов..."
-    apt update -qq
-    
-    # Установка Python и pip
-    print_status "Установка Python 3.11+ и pip..."
-    apt install -y python3 python3-pip python3-venv git curl
-    
-    # Проверка версии Python
-    PYTHON_VERSION=$(python3 --version | cut -d' ' -f2 | cut -d'.' -f1,2)
-    print_success "Python версия: $PYTHON_VERSION"
-    
-    print_success "Системные зависимости установлены"
-}
+print_status "OK" "Директория бота найдена: $BOT_DIR"
 
-# Создание пользователя для бота
-create_bot_user() {
-    print_separator
-    print_status "Создание пользователя для бота"
-    
-    BOT_USER="avitobot"
-    BOT_HOME="/opt/avito-rental-bot"
-    
-    # Создание пользователя если не существует
-    if ! id "$BOT_USER" &>/dev/null; then
-        useradd -r -s /bin/bash -d "$BOT_HOME" -m "$BOT_USER"
-        print_success "Пользователь $BOT_USER создан"
-    else
-        print_warning "Пользователь $BOT_USER уже существует"
+# Проверка Python
+PYTHON_CMD=""
+for cmd in python3.11 python3.10 python3.9 python3.8 python3; do
+    if command -v "$cmd" &> /dev/null; then
+        PYTHON_CMD="$cmd"
+        break
     fi
-    
-    # Создание домашней директории
-    mkdir -p "$BOT_HOME"
-    chown "$BOT_USER:$BOT_USER" "$BOT_HOME"
-    
-    print_success "Рабочая директория: $BOT_HOME"
-}
+done
 
-# Копирование файлов проекта
-deploy_project() {
-    print_separator
-    print_status "Развертывание проекта"
-    
-    BOT_HOME="/opt/avito-rental-bot"
-    
-    # Копирование файлов проекта
-    print_status "Копирование файлов проекта..."
-    
-    # Список файлов проекта
-    PROJECT_FILES=("main.py" "avito.py" "chat_gpt.py" "telegram.py" "config.py")
-    
-    for file in "${PROJECT_FILES[@]}"; do
-        if [[ -f "$file" ]]; then
-            cp "$file" "$BOT_HOME/"
-            print_success "Скопирован файл: $file"
-        else
-            print_error "Файл не найден: $file"
-        fi
-    done
-    
-    # Создание requirements.txt
-    cat > "$BOT_HOME/requirements.txt" << EOF
-aiohttp==3.9.1
-asyncio
-python-telegram-bot==20.7
-openai==1.3.7
-requests==2.31.0
-EOF
-    
-    print_success "Создан файл requirements.txt"
-}
+if [ -z "$PYTHON_CMD" ]; then
+    print_status "ERROR" "Python3 не найден в системе"
+    exit 1
+fi
 
-# Создание виртуального окружения и установка зависимостей
-setup_venv() {
-    print_separator
-    print_status "Настройка виртуального окружения Python"
-    
-    BOT_HOME="/opt/avito-rental-bot"
-    VENV_PATH="$BOT_HOME/venv"
-    
-    # Создание виртуального окружения
-    print_status "Создание виртуального окружения..."
-    sudo -u avitobot python3 -m venv "$VENV_PATH"
-    
-    # Установка зависимостей
-    print_status "Установка Python зависимостей..."
-    sudo -u avitobot "$VENV_PATH/bin/pip" install --upgrade pip
-    sudo -u avitobot "$VENV_PATH/bin/pip" install -r "$BOT_HOME/requirements.txt"
-    
-    print_success "Виртуальное окружение настроено"
-}
+PYTHON_VERSION=$($PYTHON_CMD --version 2>&1 | cut -d' ' -f2)
+print_status "OK" "Python найден: $PYTHON_CMD (версия $PYTHON_VERSION)"
+
+# Проверка зависимостей
+print_status "INFO" "Проверка зависимостей..."
+
+if [ -f "$BOT_DIR/requirements.txt" ]; then
+    print_status "INFO" "Установка зависимостей из requirements.txt..."
+    cd "$BOT_DIR"
+    $PYTHON_CMD -m pip install -r requirements.txt
+else
+    print_status "INFO" "Установка базовых зависимостей..."
+    $PYTHON_CMD -m pip install aiohttp asyncio
+fi
 
 # Создание systemd сервиса
-create_systemd_service() {
-    print_separator
-    print_status "Создание systemd сервиса"
-    
-    SERVICE_FILE="/etc/systemd/system/avito-rental-bot.service"
-    BOT_HOME="/opt/avito-rental-bot"
-    
-    cat > "$SERVICE_FILE" << EOF
+SERVICE_NAME="rental-production"
+SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+
+print_status "INFO" "Создание systemd сервиса..."
+
+cat > "$SERVICE_FILE" << EOF
 [Unit]
-Description=Avito Rental Bot
+Description=Rental Production Bot
 After=network.target
-Wants=network.target
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-User=avitobot
-Group=avitobot
-WorkingDirectory=$BOT_HOME
-Environment=PYTHONPATH=$BOT_HOME
-ExecStart=$BOT_HOME/venv/bin/python main.py
 Restart=always
 RestartSec=10
+User=$REAL_USER
+WorkingDirectory=$BOT_DIR
+ExecStart=$PYTHON_CMD $BOT_DIR/main.py
+Environment=PYTHONPATH=$BOT_DIR
+Environment=PYTHONUNBUFFERED=1
+
+# Логирование
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=avito-rental-bot
-
-# Политики перезапуска
-StartLimitInterval=60
-StartLimitBurst=3
+SyslogIdentifier=rental-production
 
 # Безопасность
 NoNewPrivileges=true
-PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=$BOT_HOME
+ReadWritePaths=$BOT_DIR
 
 [Install]
 WantedBy=multi-user.target
 EOF
-    
-    print_success "Systemd сервис создан: $SERVICE_FILE"
-    
-    # Перезагрузка systemd
-    systemctl daemon-reload
-    print_success "Systemd конфигурация перезагружена"
-}
 
-# Настройка логирования
-setup_logging() {
-    print_separator
-    print_status "Настройка системы логирования"
-    
-    # Создание директории для логов
-    LOG_DIR="/var/log/avito-rental-bot"
-    mkdir -p "$LOG_DIR"
-    chown avitobot:avitobot "$LOG_DIR"
-    
-    # Настройка ротации логов
-    cat > "/etc/logrotate.d/avito-rental-bot" << EOF
-$LOG_DIR/*.log {
-    daily
-    missingok
-    rotate 30
-    compress
-    delaycompress
-    notifempty
-    copytruncate
-    su avitobot avitobot
-}
-EOF
-    
-    print_success "Логирование настроено: $LOG_DIR"
-}
+print_status "OK" "Сервис создан: $SERVICE_FILE"
 
-# Создание скриптов управления
-create_management_scripts() {
-    print_separator
-    print_status "Создание скриптов управления"
-    
-    BOT_HOME="/opt/avito-rental-bot"
-    
-    # Скрипт запуска
-    cat > "$BOT_HOME/start.sh" << 'EOF'
-#!/bin/bash
-sudo systemctl start avito-rental-bot
-sudo systemctl enable avito-rental-bot
-echo "Бот запущен и добавлен в автозагрузку"
-EOF
-    
-    # Скрипт остановки
-    cat > "$BOT_HOME/stop.sh" << 'EOF'
-#!/bin/bash
-sudo systemctl stop avito-rental-bot
-echo "Бот остановлен"
-EOF
-    
-    # Скрипт перезапуска
-    cat > "$BOT_HOME/restart.sh" << 'EOF'
-#!/bin/bash
-sudo systemctl restart avito-rental-bot
-echo "Бот перезапущен"
-EOF
-    
-    # Скрипт проверки статуса
-    cat > "$BOT_HOME/status.sh" << 'EOF'
-#!/bin/bash
-echo "=== СТАТУС СЕРВИСА ==="
-sudo systemctl status avito-rental-bot --no-pager
-echo ""
-echo "=== ПОСЛЕДНИЕ ЛОГИ ==="
-sudo journalctl -u avito-rental-bot -n 20 --no-pager
-EOF
-    
-    # Скрипт просмотра логов
-    cat > "$BOT_HOME/logs.sh" << 'EOF'
-#!/bin/bash
-echo "Просмотр логов бота (Ctrl+C для выхода):"
-sudo journalctl -u avito-rental-bot -f
-EOF
-    
-    # Установка прав на выполнение
-    chmod +x "$BOT_HOME"/*.sh
-    chown avitobot:avitobot "$BOT_HOME"/*.sh
-    
-    print_success "Скрипты управления созданы"
-}
+# Настройка прав доступа
+chown "$REAL_USER:$REAL_USER" "$BOT_DIR" -R
+chmod 755 "$BOT_DIR"
+chmod 644 "$SERVICE_FILE"
 
-# Финальная настройка и запуск
-final_setup() {
-    print_separator
-    print_status "Финальная настройка и запуск"
+print_status "OK" "Права доступа настроены"
+
+# Перезагрузка systemd
+systemctl daemon-reload
+print_status "OK" "Systemd daemon перезагружен"
+
+# Включение автозапуска
+systemctl enable "$SERVICE_NAME"
+print_status "OK" "Автозапуск включен"
+
+echo
+print_box "УСТАНОВКА ЗАВЕРШЕНА"
+echo
+
+# Таблица с командами управления
+echo "┌─────────────────────────────────────────────────────────────────────────┐"
+echo "│                           КОМАНДЫ УПРАВЛЕНИЯ                           │"
+echo "├─────────────────────────────────────────────────────────────────────────┤"
+echo "│ Запуск бота:        sudo systemctl start $SERVICE_NAME"
+echo "│ Остановка бота:     sudo systemctl stop $SERVICE_NAME"
+echo "│ Перезапуск бота:    sudo systemctl restart $SERVICE_NAME"
+echo "│ Статус бота:        sudo systemctl status $SERVICE_NAME"
+echo "│ Логи бота:          sudo journalctl -u $SERVICE_NAME -f"
+echo "│ Логи за сегодня:    sudo journalctl -u $SERVICE_NAME --since today"
+echo "│ Отключить автозапуск: sudo systemctl disable $SERVICE_NAME"
+echo "└─────────────────────────────────────────────────────────────────────────┘"
+
+echo
+echo "┌─────────────────────────────────────────────────────────────────────────┐"
+echo "│                            ИНФОРМАЦИЯ                                   │"
+echo "├─────────────────────────────────────────────────────────────────────────┤"
+echo "│ Сервис:          $SERVICE_NAME"
+echo "│ Файл сервиса:    $SERVICE_FILE"
+echo "│ Директория:      $BOT_DIR"
+echo "│ Пользователь:    $REAL_USER"
+echo "│ Python:          $PYTHON_CMD"
+echo "│ Автозапуск:      Включен"
+echo "└─────────────────────────────────────────────────────────────────────────┘"
+
+echo
+read -p "Запустить бота сейчас? (y/N): " start_now
+if [[ $start_now =~ ^[Yy]$ ]]; then
+    print_status "INFO" "Запуск бота..."
+    systemctl start "$SERVICE_NAME"
+    sleep 3
     
-    BOT_HOME="/opt/avito-rental-bot"
-    
-    # Установка прав доступа
-    chown -R avitobot:avitobot "$BOT_HOME"
-    chmod 755 "$BOT_HOME"
-    
-    print_warning "ВАЖНО: Не забудьте настроить файл config.py с вашими API ключами!"
-    echo -e "${YELLOW}Файл конфигурации: $BOT_HOME/config.py${NC}"
-    echo
-    
-    # Предложение запуска
-    read -p "Запустить бота сейчас? (y/n): " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        systemctl enable avito-rental-bot
-        systemctl start avito-rental-bot
-        
-        sleep 2
-        
-        if systemctl is-active --quiet avito-rental-bot; then
-            print_success "Бот успешно запущен и добавлен в автозагрузку"
-        else
-            print_error "Ошибка запуска бота. Проверьте конфигурацию."
-        fi
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        print_status "OK" "Бот успешно запущен"
+        echo
+        print_status "INFO" "Просмотр логов в реальном времени:"
+        echo "sudo journalctl -u $SERVICE_NAME -f"
+        echo
+        print_status "INFO" "Для выхода из логов нажмите Ctrl+C"
     else
-        print_warning "Бот не запущен. Используйте команды управления для запуска."
+        print_status "ERROR" "Ошибка запуска бота"
+        echo "Проверьте логи: sudo journalctl -u $SERVICE_NAME -n 50"
     fi
-}
+else
+    print_status "INFO" "Для запуска используйте: sudo systemctl start $SERVICE_NAME"
+fi
 
-# Вывод итоговой информации
-print_final_info() {
-    print_separator
-    echo -e "${GREEN}╔═══════════════════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║                              РАЗВЕРТЫВАНИЕ ЗАВЕРШЕНО                          ║${NC}"
-    echo -e "${GREEN}╚═══════════════════════════════════════════════════════════════════════════════╝${NC}"
-    echo
-    echo -e "${WHITE}Команды управления ботом:${NC}"
-    echo -e "${CYAN}  Запуск:         ${WHITE}sudo systemctl start avito-rental-bot${NC}"
-    echo -e "${CYAN}  Остановка:      ${WHITE}sudo systemctl stop avito-rental-bot${NC}"
-    echo -e "${CYAN}  Перезапуск:     ${WHITE}sudo systemctl restart avito-rental-bot${NC}"
-    echo -e "${CYAN}  Статус:         ${WHITE}sudo systemctl status avito-rental-bot${NC}"
-    echo -e "${CYAN}  Логи:           ${WHITE}sudo journalctl -u avito-rental-bot -f${NC}"
-    echo -e "${CYAN}  Автозагрузка:   ${WHITE}sudo systemctl enable avito-rental-bot${NC}"
-    echo
-    echo -e "${WHITE}Или используйте готовые скрипты в /opt/avito-rental-bot/:${NC}"
-    echo -e "${CYAN}  ./start.sh      ${WHITE}- Запуск бота${NC}"
-    echo -e "${CYAN}  ./stop.sh       ${WHITE}- Остановка бота${NC}"
-    echo -e "${CYAN}  ./restart.sh    ${WHITE}- Перезапуск бота${NC}"
-    echo -e "${CYAN}  ./status.sh     ${WHITE}- Проверка статуса${NC}"
-    echo -e "${CYAN}  ./logs.sh       ${WHITE}- Просмотр логов${NC}"
-    echo
-    echo -e "${YELLOW}Файлы проекта:    ${WHITE}/opt/avito-rental-bot/${NC}"
-    echo -e "${YELLOW}Конфигурация:     ${WHITE}/opt/avito-rental-bot/config.py${NC}"
-    echo -e "${YELLOW}Логи:             ${WHITE}/var/log/avito-rental-bot/${NC}"
-    echo -e "${YELLOW}Системный сервис: ${WHITE}/etc/systemd/system/avito-rental-bot.service${NC}"
-    echo
-    print_separator
-}
-
-# Основная функция
-main() {
-    print_header
-    
-    print_status "Начало развертывания Avito Rental Bot"
-    
-    check_root
-    install_dependencies
-    create_bot_user
-    deploy_project
-    setup_venv
-    create_systemd_service
-    setup_logging
-    create_management_scripts
-    final_setup
-    print_final_info
-    
-    echo -e "${GREEN}Развертывание завершено успешно!${NC}"
-}
-
-# Обработка сигналов
-trap 'echo -e "\n${RED}Развертывание прервано пользователем${NC}"; exit 1' INT TERM
-
-# Запуск основной функции
-main "$@"
+echo
+print_box "ГОТОВО! БОТ НАСТРОЕН ДЛЯ РАБОТЫ 24/7"
+echo
+echo "Автор: ZerX"
