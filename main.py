@@ -54,10 +54,6 @@ class AvitoRentalBot:
     
     def is_first_client_message(self, messages, chat_id):
         """Проверка, является ли это первое сообщение от клиента в чате"""
-        # Если чат уже был в обработке, то не первое
-        if chat_id in self.chat_states and self.chat_states[chat_id]:
-            return False
-            
         # Проверяем, есть ли исходящие сообщения от агента
         outgoing_messages = [m for m in messages if m.get("direction") == "out"]
         return len(outgoing_messages) == 0
@@ -74,19 +70,20 @@ class AvitoRentalBot:
             if not messages:
                 return
             
-            # Ищем последнее входящее текстовое сообщение
+            # Ищем последнее входящее текстовое сообщение по времени создания
+            # Проходим по всем сообщениям и находим самое новое входящее
             last_incoming = None
-            for message in reversed(messages):
+            for message in messages:
                 if (message.get("direction") == "in" and 
                     message.get("type") == "text" and 
                     message.get("content", {}).get("text", "").strip()):
-                    last_incoming = message
-                    break
+                    if last_incoming is None or message.get("created", 0) > last_incoming.get("created", 0):
+                        last_incoming = message
             
             if not last_incoming:
                 return
             
-            # Проверяем временные рамки (только новые сообщения)
+            # Проверяем временные рамки - обрабатываем только новые сообщения
             cutoff_time = datetime.utcnow() - timedelta(hours=TIME_WINDOW_HOURS)
             message_time = datetime.utcfromtimestamp(last_incoming["created"])
             
@@ -94,11 +91,13 @@ class AvitoRentalBot:
                 return
             
             # Проверяем, не обработано ли уже это сообщение
+            # Сравниваем timestamp последнего обработанного с текущим
             last_processed_time = self.processed_messages.get(chat_id, 0)
             if last_incoming["created"] <= last_processed_time:
                 return
             
             # Проверяем, нет ли уже ответа на это сообщение
+            # Ищем исходящие сообщения с временной меткой больше входящего
             has_newer_outgoing = any(
                 m.get("direction") == "out" and m.get("created", 0) > last_incoming["created"]
                 for m in messages
@@ -107,12 +106,13 @@ class AvitoRentalBot:
             if has_newer_outgoing:
                 return
             
-            print(f"💬 Обработка нового сообщения в чате {chat_id}")
+            print(f"Получено сообщение: {last_incoming['content']['text'][:100]}...")
             
-            # Форматируем историю диалога
+            # Форматируем историю диалога для отправки в GPT
             dialog_history = self.format_dialog_history(messages)
             
-            # Определяем, первое ли это сообщение клиента
+            # Определяем, первое ли это сообщение клиента в чате
+            # Проверяем наличие исходящих сообщений от агента
             is_first_message = self.is_first_client_message(messages, chat_id)
             
             # Генерируем ответ через ChatGPT
@@ -122,22 +122,23 @@ class AvitoRentalBot:
                 print(f"Не удалось сгенерировать ответ для чата {chat_id}")
                 return
             
-            # Удаляем маркер завершения из ответа перед отправкой
+            # Удаляем маркер завершения из ответа перед отправкой клиенту
             clean_response = response.replace(COMPLETION_MARKER, "").strip()
             
-            # Отправляем ответ
+            # Отправляем ответ клиенту
             success = await client.send_message(chat_id, clean_response)
             
             if success:
-                print(f"Ответ отправлен в чат {chat_id}: {clean_response[:100]}...")
+                print(f"Отправлен ответ: {clean_response[:100]}...")
                 
                 # Обновляем время последнего обработанного сообщения
+                # Чтобы не обрабатывать это сообщение повторно
                 self.processed_messages[chat_id] = last_incoming["created"]
                 
                 # Сохраняем состояние диалога
                 self.chat_states[chat_id].append(dialog_history)
                 
-                # Проверяем завершенность диалога
+                # Проверяем завершенность диалога по маркеру
                 if check_dialog_completion(response):
                     await self.handle_completed_dialog(chat_id, dialog_history + f"\nСветлана: {clean_response}")
                     
