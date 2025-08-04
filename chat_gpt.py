@@ -49,10 +49,8 @@ class ChatGPTHandler:
     async def generate_response(self, dialog_history, is_first_message=False):
         """Генерация ответа агента по аренде"""
         try:
-            # Определяем системный промпт
+            # Используем только основной системный промпт
             system_prompt = SYSTEM_PROMPT
-            if is_first_message:
-                system_prompt += f"\n\n{FIRST_MESSAGE_INSTRUCTION}"
             
             # Формируем сообщения для API
             messages = [
