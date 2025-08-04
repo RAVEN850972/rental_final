@@ -101,13 +101,24 @@ if [ -z "$BOT_DIR" ]; then
     fi
 fi
 
+# Проверяем абсолютный путь
+if [[ ! "$BOT_DIR" = /* ]]; then
+    BOT_DIR="$(realpath "$BOT_DIR")"
+fi
+
+# Проверяем что директория существует
+if [ ! -d "$BOT_DIR" ]; then
+    print_status "ERROR" "Директория $BOT_DIR не существует"
+    exit 1
+fi
+
 print_status "OK" "Директория бота найдена: $BOT_DIR"
 
 # Проверка Python
 PYTHON_CMD=""
 for cmd in python3.11 python3.10 python3.9 python3.8 python3; do
     if command -v "$cmd" &> /dev/null; then
-        PYTHON_CMD="$cmd"
+        PYTHON_CMD="$(which "$cmd")"
         break
     fi
 done
@@ -119,6 +130,19 @@ fi
 
 PYTHON_VERSION=$($PYTHON_CMD --version 2>&1 | cut -d' ' -f2)
 print_status "OK" "Python найден: $PYTHON_CMD (версия $PYTHON_VERSION)"
+
+echo
+print_status "INFO" "Проверяем конфигурацию перед созданием сервиса..."
+echo "Директория бота: $BOT_DIR"
+echo "Python путь: $PYTHON_CMD"
+echo "Файл main.py: $(ls -la "$BOT_DIR/main.py" 2>/dev/null || echo 'НЕ НАЙДЕН')"
+echo "Файл config.py: $(ls -la "$BOT_DIR/config.py" 2>/dev/null || echo 'НЕ НАЙДЕН')"
+echo
+read -p "Продолжить создание сервиса? (y/N): " continue_setup
+if [[ ! $continue_setup =~ ^[Yy]$ ]]; then
+    print_status "INFO" "Установка прервана пользователем"
+    exit 0
+fi
 
 # Проверка зависимостей
 print_status "INFO" "Проверка зависимостей..."
