@@ -18,8 +18,15 @@ from config import (
     MAX_MESSAGES_HISTORY
 )
 
-# Удаляем константы конфигурации
-
+# Этапы диалога
+STAGE_GREETING = "greeting"
+STAGE_RESIDENTS = "residents"
+STAGE_CHILDREN = "children"
+STAGE_PETS = "pets"
+STAGE_RENTAL_PERIOD = "rental_period"
+STAGE_DEADLINE = "deadline"
+STAGE_CONTACTS = "contacts"
+STAGE_COMPLETE = "complete"
 
 class AvitoRentalBot:
     def __init__(self):
@@ -29,6 +36,56 @@ class AvitoRentalBot:
         self.processed_messages = defaultdict(int)
         # Завершенные диалоги (чтобы не обрабатывать повторно)
         self.completed_chats = set()
+        # Этапы диалогов (chat_id -> stage)
+        self.chat_stages = defaultdict(lambda: STAGE_GREETING)
+        
+    def determine_dialog_stage(self, messages):
+        """Определение текущего этапа диалога на основе истории сообщений"""
+        agent_messages = []
+        client_messages = []
+        
+        for message in messages:
+            if message.get("type") != "text":
+                continue
+            text = message.get("content", {}).get("text", "").strip().lower()
+            if not text:
+                continue
+                
+            if message.get("direction") == "out":
+                agent_messages.append(text)
+            else:
+                client_messages.append(text)
+        
+        # Если нет сообщений от агента - это начало
+        if not agent_messages:
+            return STAGE_GREETING
+            
+        last_agent_msg = agent_messages[-1] if agent_messages else ""
+        
+        # Проверяем ключевые фразы в последнем сообщении агента
+        if "здравствуйте" in last_agent_msg and "кто проживать планирует" in last_agent_msg:
+            return STAGE_RESIDENTS
+        elif "дети" in last_agent_msg or "ребен" in last_agent_msg:
+            return STAGE_CHILDREN
+        elif "животн" in last_agent_msg or "питом" in last_agent_msg:
+            return STAGE_PETS
+        elif "срок" in last_agent_msg or "месяц" in last_agent_msg:
+            return STAGE_RENTAL_PERIOD
+        elif "дата" in last_agent_msg or "числ" in last_agent_msg or "заез" in last_agent_msg:
+            return STAGE_DEADLINE
+        elif "телефон" in last_agent_msg or "номер" in last_agent_msg:
+            return STAGE_CONTACTS
+        elif "обсудим" in last_agent_msg and "собственниц" in last_agent_msg:
+            return STAGE_COMPLETE
+            
+        # Анализируем, есть ли ответы клиента на основные вопросы
+        client_text = " ".join(client_messages).lower()
+        
+        if any(word in client_text for word in ["планирую", "буду", "человек", "семь", "один", "два", "три"]):
+            if "дет" not in last_agent_msg:
+                return STAGE_CHILDREN
+        
+        return STAGE_RESIDENTS
         
     def format_dialog_history(self, messages):
         """Форматирование истории диалога для отправки в GPT"""
@@ -56,16 +113,6 @@ class AvitoRentalBot:
         
         return "\n".join(dialog)
     
-    def is_first_client_message(self, messages, chat_id):
-        """Проверка, является ли это первое сообщение от клиента в чате"""
-        # Проверяем, есть ли исходящие сообщения от агента в полной истории сообщений
-        for message in messages:
-            if message.get("direction") == "out" and message.get("type") == "text":
-                text = message.get("content", {}).get("text", "").strip()
-                if text:  # Если есть хотя бы одно исходящее текстовое сообщение, то это не первый контакт
-                    return False
-        return True
-    
     async def process_chat(self, client, chat_id, chat_data):
         """Обработка отдельного чата"""
         try:
@@ -79,7 +126,6 @@ class AvitoRentalBot:
                 return
             
             # Ищем последнее входящее текстовое сообщение по времени создания
-            # Проходим по всем сообщениям и находим самое новое входящее
             last_incoming = None
             for message in messages:
                 if (message.get("direction") == "in" and 
@@ -99,13 +145,11 @@ class AvitoRentalBot:
                 return
             
             # Проверяем, не обработано ли уже это сообщение
-            # Сравниваем timestamp последнего обработанного с текущим
             last_processed_time = self.processed_messages.get(chat_id, 0)
             if last_incoming["created"] <= last_processed_time:
                 return
             
             # Проверяем, нет ли уже ответа на это сообщение
-            # Ищем исходящие сообщения с временной меткой больше входящего
             has_newer_outgoing = any(
                 m.get("direction") == "out" and m.get("created", 0) > last_incoming["created"]
                 for m in messages
@@ -116,18 +160,23 @@ class AvitoRentalBot:
             
             print(f"Получено сообщение: {last_incoming['content']['text'][:100]}...")
             
+            # Определяем текущий этап диалога
+            current_stage = self.determine_dialog_stage(messages)
+            self.chat_stages[chat_id] = current_stage
+            
+            # Определяем, первое ли это сообщение (только если нет исходящих сообщений вообще)
+            has_any_outgoing = any(m.get("direction") == "out" and m.get("type") == "text" for m in messages)
+            is_first_message = not has_any_outgoing
+            
             # Форматируем историю диалога для отправки в GPT
             dialog_history = self.format_dialog_history(messages)
             
-            # Определяем, первое ли это сообщение клиента в чате
-            # Проверяем наличие исходящих сообщений от агента
-            is_first_message = self.is_first_client_message(messages, chat_id)
-            
             # ОТЛАДКА: выводим что отправляется в нейросеть
             print(f"=== ОТЛАДКА ЧАТА {chat_id} ===")
+            print(f"current_stage: {current_stage}")
             print(f"is_first_message: {is_first_message}")
             print(f"dialog_history отправляемый в GPT:")
-            print(dialog_history)
+            print(dialog_history[-500:])  # Показываем только последние 500 символов
             print("=== КОНЕЦ ОТЛАДКИ ===")
             
             # Генерируем ответ через ChatGPT
@@ -147,7 +196,6 @@ class AvitoRentalBot:
                 print(f"Отправлен ответ: {clean_response[:100]}...")
                 
                 # Обновляем время последнего обработанного сообщения
-                # Чтобы не обрабатывать это сообщение повторно
                 self.processed_messages[chat_id] = last_incoming["created"]
                 
                 # Сохраняем состояние диалога
