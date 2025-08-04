@@ -38,8 +38,6 @@ class AvitoRentalBot:
         self.completed_chats = set()
         # Этапы диалогов (chat_id -> stage)
         self.chat_stages = defaultdict(lambda: STAGE_GREETING)
-        # Отслеживание отправленных приветствий
-        self.greeting_sent = set()
         
     def determine_dialog_stage(self, messages):
         """Определение текущего этапа диалога на основе истории сообщений"""
@@ -168,7 +166,7 @@ class AvitoRentalBot:
             
             # Определяем, первое ли это сообщение
             has_any_outgoing = any(m.get("direction") == "out" and m.get("type") == "text" for m in messages)
-            is_first_message = (chat_id not in self.greeting_sent and not has_any_outgoing)
+            is_first_message = not has_any_outgoing
             
             # Форматируем историю диалога для отправки в GPT
             dialog_history = self.format_dialog_history(messages)
@@ -196,10 +194,6 @@ class AvitoRentalBot:
             
             if success:
                 print(f"Отправлен ответ: {clean_response[:100]}...")
-                
-                # Отмечаем, что приветствие отправлено (если это было первое сообщение)
-                if is_first_message:
-                    self.greeting_sent.add(chat_id)
                 
                 # Обновляем время последнего обработанного сообщения
                 self.processed_messages[chat_id] = last_incoming["created"]
