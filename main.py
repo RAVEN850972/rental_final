@@ -34,7 +34,11 @@ class AvitoRentalBot:
         """Форматирование истории диалога для отправки в GPT"""
         dialog = []
         
-        for message in messages[-MAX_MESSAGES_HISTORY:]:  # Берем последние 30 сообщений
+        # Берем последние 30 сообщений и сортируем по времени (от старых к новым)
+        recent_messages = messages[-MAX_MESSAGES_HISTORY:]
+        sorted_messages = sorted(recent_messages, key=lambda x: x.get("created", 0))
+        
+        for message in sorted_messages:
             if message.get("type") != "text":
                 continue
                 
@@ -118,6 +122,13 @@ class AvitoRentalBot:
             # Определяем, первое ли это сообщение клиента в чате
             # Проверяем наличие исходящих сообщений от агента
             is_first_message = self.is_first_client_message(messages, chat_id)
+            
+            # ОТЛАДКА: выводим что отправляется в нейросеть
+            print(f"=== ОТЛАДКА ЧАТА {chat_id} ===")
+            print(f"is_first_message: {is_first_message}")
+            print(f"dialog_history отправляемый в GPT:")
+            print(dialog_history)
+            print("=== КОНЕЦ ОТЛАДКИ ===")
             
             # Генерируем ответ через ChatGPT
             response = await get_agent_response(dialog_history, is_first_message)
