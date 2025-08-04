@@ -54,9 +54,13 @@ class AvitoRentalBot:
     
     def is_first_client_message(self, messages, chat_id):
         """Проверка, является ли это первое сообщение от клиента в чате"""
-        # Проверяем, есть ли исходящие сообщения от агента
-        outgoing_messages = [m for m in messages if m.get("direction") == "out"]
-        return len(outgoing_messages) == 0
+        # Проверяем, есть ли исходящие сообщения от агента в полной истории сообщений
+        for message in messages:
+            if message.get("direction") == "out" and message.get("type") == "text":
+                text = message.get("content", {}).get("text", "").strip()
+                if text:  # Если есть хотя бы одно исходящее текстовое сообщение, то это не первый контакт
+                    return False
+        return True
     
     async def process_chat(self, client, chat_id, chat_data):
         """Обработка отдельного чата"""
